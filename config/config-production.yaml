@@ -40,7 +40,7 @@ alert_channels:
     # Webhook URL is securely stored in Secret Manager
     webhook_url: "${secret:slack-webhook-url}"
     rules:
-      min_magnitude: 3.0
+      min_magnitude: 2.0
       bounds:
         min_latitude: 37.3
         max_latitude: 38.3

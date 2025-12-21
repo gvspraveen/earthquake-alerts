@@ -110,18 +110,43 @@ class SlackClient:
         self,
         webhook_url: str,
         payloads: list[dict[str, Any]],
+        rate_limit_ms: int = 1000,
+        stop_on_error: bool = False,
     ) -> list[SlackResponse]:
-        """Send multiple messages to Slack.
+        """Send multiple messages to Slack with rate limiting.
+
+        This is a deep method that handles:
+        - Rate limiting between messages (Slack recommends 1 msg/sec)
+        - Optional early termination on error
+        - Consistent response collection
 
         Args:
             webhook_url: Slack incoming webhook URL
             payloads: List of message payloads
+            rate_limit_ms: Delay between messages in milliseconds (default: 1000)
+            stop_on_error: If True, stop sending on first error
 
         Returns:
-            List of responses for each message
+            List of responses for each message (may be shorter if stop_on_error)
         """
+        import time
+
         responses = []
-        for payload in payloads:
+
+        for i, payload in enumerate(payloads):
+            # Rate limit: wait before sending (except for first message)
+            if i > 0 and rate_limit_ms > 0:
+                time.sleep(rate_limit_ms / 1000.0)
+
             response = self.send_message(webhook_url, payload)
             responses.append(response)
+
+            # Early termination on error if requested
+            if stop_on_error and not response.success:
+                logger.warning(
+                    "Stopping batch send after error on message %d of %d",
+                    i + 1, len(payloads),
+                )
+                break
+
         return responses

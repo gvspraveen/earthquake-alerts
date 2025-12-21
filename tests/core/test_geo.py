@@ -14,6 +14,7 @@ from src.core.geo import (
     filter_by_bounds,
     filter_by_proximity,
     get_distance_to_poi,
+    combine_bounds,
 )
 from src.core.earthquake import Earthquake
 from datetime import datetime, timezone
@@ -262,3 +263,59 @@ class TestFilterByProximity:
         # SF and Oakland are within 20km, LA is not
         assert len(result) == 2
         assert {e.id for e in result} == {"test", "oakland"}
+
+
+class TestCombineBounds:
+    """Tests for combine_bounds() function."""
+
+    def test_empty_list_returns_none(self):
+        """Empty list returns None."""
+        result = combine_bounds([])
+        assert result is None
+
+    def test_single_box_returns_same(self):
+        """Single box returns equivalent box."""
+        box = BoundingBox(36.0, 38.0, -123.0, -121.0)
+        result = combine_bounds([box])
+
+        assert result == box
+
+    def test_two_boxes_returns_encompassing(self):
+        """Two boxes return their encompassing box."""
+        box1 = BoundingBox(36.0, 38.0, -123.0, -121.0)  # NorCal
+        box2 = BoundingBox(33.0, 35.0, -119.0, -117.0)  # SoCal
+
+        result = combine_bounds([box1, box2])
+
+        # Should encompass both
+        assert result.min_latitude == 33.0
+        assert result.max_latitude == 38.0
+        assert result.min_longitude == -123.0
+        assert result.max_longitude == -117.0
+
+    def test_overlapping_boxes(self):
+        """Overlapping boxes return correct combined box."""
+        box1 = BoundingBox(36.0, 38.0, -123.0, -121.0)
+        box2 = BoundingBox(37.0, 39.0, -122.0, -120.0)  # Overlaps
+
+        result = combine_bounds([box1, box2])
+
+        assert result.min_latitude == 36.0
+        assert result.max_latitude == 39.0
+        assert result.min_longitude == -123.0
+        assert result.max_longitude == -120.0
+
+    def test_three_boxes(self):
+        """Three boxes return correct combined box."""
+        boxes = [
+            BoundingBox(36.0, 37.0, -123.0, -122.0),
+            BoundingBox(37.0, 38.0, -122.0, -121.0),
+            BoundingBox(38.0, 39.0, -121.0, -120.0),
+        ]
+
+        result = combine_bounds(boxes)
+
+        assert result.min_latitude == 36.0
+        assert result.max_latitude == 39.0
+        assert result.min_longitude == -123.0
+        assert result.max_longitude == -120.0

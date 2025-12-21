@@ -2,11 +2,13 @@
 
 This module handles loading configuration from YAML files and
 environment variables. All I/O is contained here.
+
+Models (Config, MonitoringRegion) are defined in src/core/config.py
+to avoid information leakage between layers.
 """
 
 import logging
 import os
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
@@ -14,46 +16,11 @@ import yaml
 
 from src.core.geo import BoundingBox, PointOfInterest
 from src.core.rules import AlertChannel, AlertRule
+from src.core.config import Config, MonitoringRegion
 from src.shell.secret_manager_client import SecretManagerClient, SecretManagerConfig
 
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class MonitoringRegion:
-    """A geographic region to monitor for earthquakes.
-
-    Attributes:
-        name: Human-readable name
-        bounds: Geographic bounding box
-    """
-    name: str
-    bounds: BoundingBox
-
-
-@dataclass
-class Config:
-    """Application configuration.
-
-    Attributes:
-        polling_interval_seconds: How often to check for new earthquakes
-        lookback_hours: How far back to fetch earthquakes
-        monitoring_regions: Regions to monitor
-        alert_channels: Notification channels with their rules
-        points_of_interest: Named locations for proximity alerts
-        firestore_database: Firestore database name (None for default)
-        firestore_collection: Firestore collection for deduplication
-        min_fetch_magnitude: Minimum magnitude to fetch from USGS
-    """
-    polling_interval_seconds: int = 60
-    lookback_hours: int = 1
-    monitoring_regions: list[MonitoringRegion] = field(default_factory=list)
-    alert_channels: list[AlertChannel] = field(default_factory=list)
-    points_of_interest: list[PointOfInterest] = field(default_factory=list)
-    firestore_database: str | None = None
-    firestore_collection: str = "earthquake_alerts"
-    min_fetch_magnitude: float | None = None
 
 
 def _get_secret_manager_client() -> Optional[SecretManagerClient]:
@@ -82,40 +49,33 @@ def _get_secret_manager_client() -> Optional[SecretManagerClient]:
     return None
 
 
-def _expand_env_vars(value: str, secret_client: Optional[SecretManagerClient] = None) -> str:
-    """Expand environment variables or secrets in a string.
+def _resolve_value(value: str, secret_client: Optional[SecretManagerClient] = None) -> str:
+    """Resolve a value that may contain secret or env var placeholders.
 
-    Supports:
-    - ${VAR_NAME} - environment variable
-    - ${secret:SECRET_NAME} - Secret Manager secret
+    Delegates to SecretManagerClient.resolve() which handles the complexity
+    of parsing placeholder syntax (pulling complexity down).
+
+    Args:
+        value: Value to resolve (may contain ${...} placeholders)
+        secret_client: Client for resolving secrets
+
+    Returns:
+        Resolved value
     """
     if not isinstance(value, str):
         return value
 
+    if secret_client:
+        return secret_client.resolve(value)
+
+    # No secret client - only handle env vars
     if value.startswith("${") and value.endswith("}"):
         var_spec = value[2:-1]
-
-        # Check if it's a secret reference
-        if var_spec.startswith("secret:"):
-            secret_name = var_spec[7:]  # Remove "secret:" prefix
-            if secret_client:
-                secret_value = secret_client.get_secret(secret_name)
-                if secret_value:
-                    return secret_value
-                logger.warning("Secret %s not found, checking environment", secret_name)
-            # Fall back to environment variable with same name
-            env_value = os.environ.get(secret_name.upper().replace("-", "_"))
+        if not var_spec.startswith("secret:"):
+            env_value = os.environ.get(var_spec)
             if env_value:
                 return env_value
-            logger.warning("Secret/env var %s not found", secret_name)
-            return value
-
-        # Regular environment variable
-        env_value = os.environ.get(var_spec)
-        if env_value is None:
             logger.warning("Environment variable %s not set", var_spec)
-            return value
-        return env_value
 
     return value
 
@@ -169,7 +129,7 @@ def _parse_channel(
     secret_client: Optional[SecretManagerClient] = None,
 ) -> AlertChannel:
     """Parse an alert channel from config data."""
-    webhook_url = _expand_env_vars(data["webhook_url"], secret_client)
+    webhook_url = _resolve_value(data["webhook_url"], secret_client)
     rules_data = data.get("rules", {})
 
     return AlertChannel(

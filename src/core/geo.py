@@ -188,3 +188,28 @@ def filter_by_proximity(
         e for e in earthquakes
         if is_within_radius(e, poi.latitude, poi.longitude, poi.alert_radius_km)
     ]
+
+
+def combine_bounds(boxes: list[BoundingBox]) -> BoundingBox | None:
+    """Combine multiple bounding boxes into their encompassing box.
+
+    Pure function.
+
+    This creates the smallest bounding box that contains all input boxes.
+    Useful for combining multiple monitoring regions into a single USGS query.
+
+    Args:
+        boxes: List of bounding boxes to combine
+
+    Returns:
+        Combined bounding box, or None if input is empty
+    """
+    if not boxes:
+        return None
+
+    return BoundingBox(
+        min_latitude=min(b.min_latitude for b in boxes),
+        max_latitude=max(b.max_latitude for b in boxes),
+        min_longitude=min(b.min_longitude for b in boxes),
+        max_longitude=max(b.max_longitude for b in boxes),
+    )

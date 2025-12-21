@@ -12,12 +12,12 @@ from src.core.earthquake import Earthquake, parse_earthquakes
 from src.core.dedup import filter_already_alerted, compute_ids_to_store
 from src.core.formatter import format_slack_message, get_nearby_pois
 from src.core.rules import AlertChannel, make_alert_decisions, AlertDecision
-from src.core.geo import BoundingBox
+from src.core.geo import BoundingBox, combine_bounds
 
+from src.core.config import Config
 from src.shell.usgs_client import USGSClient
 from src.shell.slack_client import SlackClient
 from src.shell.firestore_client import FirestoreClient, FirestoreConfig
-from src.shell.config_loader import Config
 
 
 logger = logging.getLogger(__name__)
@@ -108,22 +108,12 @@ class Orchestrator:
         )
 
     def _get_combined_bounds(self) -> BoundingBox | None:
-        """Get combined bounding box from all monitoring regions."""
-        if not self.config.monitoring_regions:
-            return None
+        """Get combined bounding box from all monitoring regions.
 
-        # Combine all regions into one bounding box
-        min_lat = min(r.bounds.min_latitude for r in self.config.monitoring_regions)
-        max_lat = max(r.bounds.max_latitude for r in self.config.monitoring_regions)
-        min_lon = min(r.bounds.min_longitude for r in self.config.monitoring_regions)
-        max_lon = max(r.bounds.max_longitude for r in self.config.monitoring_regions)
-
-        return BoundingBox(
-            min_latitude=min_lat,
-            max_latitude=max_lat,
-            min_longitude=min_lon,
-            max_longitude=max_lon,
-        )
+        Uses the pure combine_bounds function from core.geo.
+        """
+        boxes = [r.bounds for r in self.config.monitoring_regions]
+        return combine_bounds(boxes)
 
     def _fetch_earthquakes(self) -> list[Earthquake]:
         """Fetch earthquakes from USGS API.

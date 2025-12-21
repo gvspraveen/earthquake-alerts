@@ -12,7 +12,10 @@ Keep this layer thin and simple. All business logic should be in core.
 from src.shell.usgs_client import USGSClient
 from src.shell.slack_client import SlackClient
 from src.shell.firestore_client import FirestoreClient
-from src.shell.config_loader import load_config, Config
+from src.shell.config_loader import load_config
+
+# Config is a core model, re-exported here for convenience
+from src.core.config import Config
 
 __all__ = [
     "USGSClient",

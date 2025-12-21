@@ -89,13 +89,14 @@ def format_slack_message(
     Returns:
         Slack message payload dict
     """
-    emoji = get_magnitude_emoji(earthquake.magnitude)
-    severity = get_severity_label(earthquake.magnitude)
-    pst_time = earthquake.time.astimezone(PST)
-    time_str = pst_time.strftime("%Y-%m-%d %H:%M:%S PST")
+    # Convert earthquake time to Unix timestamp for Slack's local time formatting
+    timestamp = int(earthquake.time.timestamp())
 
-    # Build the main text with @everyone to alert all users
-    text = f"<!everyone> {emoji} *{severity} Earthquake Detected*"
+    # Google Maps link for the location
+    maps_url = f"https://www.google.com/maps?q={earthquake.latitude},{earthquake.longitude}"
+
+    # Build the main text with @everyone
+    text = f"<!everyone> *{earthquake.magnitude:.1f}* - {earthquake.place}"
 
     # Build blocks for rich formatting
     blocks: list[dict[str, Any]] = [
@@ -103,37 +104,15 @@ def format_slack_message(
             "type": "header",
             "text": {
                 "type": "plain_text",
-                "text": f"{emoji} {severity} Earthquake Detected",
+                "text": f"{earthquake.magnitude:.1f}",
             },
         },
         {
             "type": "section",
-            "fields": [
-                {
-                    "type": "mrkdwn",
-                    "text": f"*Magnitude:*\n{earthquake.magnitude:.1f} {earthquake.mag_type.upper()}",
-                },
-                {
-                    "type": "mrkdwn",
-                    "text": f"*Severity:*\n{severity}",
-                },
-                {
-                    "type": "mrkdwn",
-                    "text": f"*Location:*\n{earthquake.place}",
-                },
-                {
-                    "type": "mrkdwn",
-                    "text": f"*Depth:*\n{earthquake.depth_km:.1f} km",
-                },
-                {
-                    "type": "mrkdwn",
-                    "text": f"*Time:*\n{time_str}",
-                },
-                {
-                    "type": "mrkdwn",
-                    "text": f"*Coordinates:*\n{earthquake.latitude:.4f}, {earthquake.longitude:.4f}",
-                },
-            ],
+            "text": {
+                "type": "mrkdwn",
+                "text": f"<{maps_url}|{earthquake.place}> at <!date^{timestamp}^{{time}}|{earthquake.time.strftime('%H:%M')}>",
+            },
         },
     ]
 

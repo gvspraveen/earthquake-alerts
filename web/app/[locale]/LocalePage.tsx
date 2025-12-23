@@ -6,28 +6,11 @@ import CountdownTimer from "@/components/CountdownTimer";
 import EarthquakeCard from "@/components/EarthquakeCard";
 import MapWrapper from "@/components/MapWrapper";
 import { type LocaleConfig } from "@/config/locales";
-import { type Earthquake, type EarthquakeResponse } from "@/lib/api";
+import { type Earthquake, type EarthquakeResponse, API_BASE_URL } from "@/lib/api";
 
 interface LocalePageProps {
   locale: LocaleConfig;
 }
-
-// Mock data for development - will be replaced with API call
-const MOCK_EARTHQUAKE: Earthquake = {
-  id: "nc74053241",
-  magnitude: 3.2,
-  place: "5km NW of San Ramon, CA",
-  time: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(), // 3 days ago
-  latitude: 37.8123,
-  longitude: -121.9876,
-  depth_km: 8.2,
-  url: "https://earthquake.usgs.gov/earthquakes/eventpage/nc74053241",
-  felt: 142,
-  alert: null,
-  tsunami: false,
-  mag_type: "ml",
-  has_shakemap: true,
-};
 
 export default function LocalePage({ locale }: LocalePageProps) {
   const [earthquake, setEarthquake] = useState<Earthquake | null>(null);
@@ -45,15 +28,8 @@ export default function LocalePage({ locale }: LocalePageProps) {
         setLoading(true);
         setError(null);
 
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL;
-        if (!apiUrl) {
-          // Use mock data in development
-          setEarthquake(MOCK_EARTHQUAKE);
-          return;
-        }
-
         const response = await fetch(
-          `${apiUrl}/api-latest-earthquake?locale=${locale.slug}`,
+          `${API_BASE_URL}/api-latest-earthquake?locale=${locale.slug}`,
           { signal: abortControllerRef.current.signal }
         );
 
@@ -69,9 +45,7 @@ export default function LocalePage({ locale }: LocalePageProps) {
           return;
         }
         console.error("Error fetching earthquake data:", err);
-        setError("Unable to load earthquake data. Using cached data.");
-        // Fall back to mock data
-        setEarthquake(MOCK_EARTHQUAKE);
+        setError("Unable to load earthquake data. Please try again later.");
       } finally {
         setLoading(false);
       }

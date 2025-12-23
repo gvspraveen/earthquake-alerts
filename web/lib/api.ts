@@ -1,3 +1,6 @@
+// API base URL - hardcoded since NEXT_PUBLIC_* env vars need build-time availability
+export const API_BASE_URL = "https://us-central1-gen-lang-client-0579637657.cloudfunctions.net";
+
 export interface Earthquake {
   id: string;
   magnitude: number;

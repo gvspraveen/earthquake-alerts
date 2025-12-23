@@ -5,14 +5,48 @@ on:
     branches:
       - main
   workflow_dispatch:  # Allow manual trigger
+    inputs:
+      deploy_backend:
+        description: 'Deploy backend (Cloud Functions)'
+        type: boolean
+        default: true
+      deploy_web:
+        description: 'Deploy web (Cloud Run)'
+        type: boolean
+        default: true
 
 env:
   PROJECT_ID: gen-lang-client-0579637657
   REGION: us-central1
   FUNCTION_NAME: earthquake-monitor
+  WEB_SERVICE_NAME: earthquake-city
 
 jobs:
-  test:
+  # Detect which parts of the codebase changed
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      web: ${{ steps.filter.outputs.web }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'src/**'
+              - 'main.py'
+              - 'requirements.txt'
+              - 'env-vars.yaml'
+              - 'config/**'
+            web:
+              - 'web/**'
+
+  # Run backend tests
+  test-backend:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -31,12 +65,17 @@ jobs:
       - name: Run tests
         run: pytest tests/ -v
 
-  deploy:
-    needs: test
+  # Deploy backend (Cloud Functions)
+  deploy-backend:
+    needs: [changes, test-backend]
+    if: |
+      always() &&
+      (needs.test-backend.result == 'success' || needs.test-backend.result == 'skipped') &&
+      (needs.changes.outputs.backend == 'true' || (github.event_name == 'workflow_dispatch' && inputs.deploy_backend))
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write  # Required for Workload Identity Federation
+      id-token: write
 
     steps:
       - uses: actions/checkout@v4
@@ -50,7 +89,7 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Deploy Cloud Function
+      - name: Deploy Cloud Function (earthquake-monitor)
         run: |
           gcloud functions deploy ${{ env.FUNCTION_NAME }} \
             --gen2 \
@@ -64,6 +103,20 @@ jobs:
             --timeout 60s \
             --env-vars-file env-vars.yaml
 
+      - name: Deploy Cloud Function (api-latest-earthquake)
+        run: |
+          gcloud functions deploy api-latest-earthquake \
+            --gen2 \
+            --runtime python311 \
+            --region ${{ env.REGION }} \
+            --source . \
+            --entry-point api_latest_earthquake \
+            --trigger-http \
+            --allow-unauthenticated \
+            --memory 256MB \
+            --timeout 30s \
+            --env-vars-file env-vars.yaml
+
       - name: Verify deployment
         run: |
           FUNCTION_URL=$(gcloud functions describe ${{ env.FUNCTION_NAME }} \
@@ -71,14 +124,63 @@ jobs:
             --format='value(serviceConfig.uri)')
           echo "Function URL: $FUNCTION_URL"
 
-          # Test the function
           RESPONSE=$(curl -s -X POST "$FUNCTION_URL")
           echo "Response: $RESPONSE"
 
-          # Check if response contains "status"
           if echo "$RESPONSE" | grep -q '"status"'; then
             echo "Deployment verified successfully!"
           else
             echo "Deployment verification failed!"
+            exit 1
+          fi
+
+  # Deploy web (Cloud Run)
+  deploy-web:
+    needs: changes
+    if: needs.changes.outputs.web == 'true' || (github.event_name == 'workflow_dispatch' && inputs.deploy_web)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy to Cloud Run
+        run: |
+          cd web
+          gcloud run deploy ${{ env.WEB_SERVICE_NAME }} \
+            --source . \
+            --region ${{ env.REGION }} \
+            --platform managed \
+            --allow-unauthenticated \
+            --port 8080 \
+            --memory 512Mi \
+            --set-env-vars "NEXT_PUBLIC_API_URL=https://${{ env.REGION }}-${{ env.PROJECT_ID }}.cloudfunctions.net"
+
+      - name: Verify web deployment
+        run: |
+          SERVICE_URL=$(gcloud run services describe ${{ env.WEB_SERVICE_NAME }} \
+            --region ${{ env.REGION }} \
+            --format='value(status.url)')
+          echo "Web URL: $SERVICE_URL"
+
+          # Test the service
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$SERVICE_URL/sanramon")
+          echo "HTTP Status: $HTTP_STATUS"
+
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "Web deployment verified successfully!"
+          else
+            echo "Web deployment verification failed!"
             exit 1
           fi

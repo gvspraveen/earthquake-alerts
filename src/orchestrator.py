@@ -10,13 +10,14 @@ from dataclasses import dataclass
 
 from src.core.earthquake import Earthquake, parse_earthquakes
 from src.core.dedup import filter_already_alerted, compute_ids_to_store
-from src.core.formatter import format_slack_message, get_nearby_pois
+from src.core.formatter import format_slack_message, format_twitter_message, get_nearby_pois
 from src.core.rules import AlertChannel, make_alert_decisions, AlertDecision
 from src.core.geo import BoundingBox, combine_bounds
 
 from src.core.config import Config
 from src.shell.usgs_client import USGSClient
 from src.shell.slack_client import SlackClient
+from src.shell.twitter_client import TwitterClient, TwitterCredentials
 from src.shell.firestore_client import FirestoreClient, FirestoreConfig
 
 
@@ -79,7 +80,8 @@ class Orchestrator:
     - USGS client (fetches earthquake data)
     - Core functions (parsing, rules, formatting)
     - Firestore client (deduplication state)
-    - Slack client (sending notifications)
+    - Slack client (sending Slack notifications)
+    - Twitter client (sending tweets)
     """
 
     def __init__(
@@ -87,6 +89,7 @@ class Orchestrator:
         config: Config,
         usgs_client: USGSClient | None = None,
         slack_client: SlackClient | None = None,
+        twitter_client: TwitterClient | None = None,
         firestore_client: FirestoreClient | None = None,
     ) -> None:
         """Initialize orchestrator with configuration.
@@ -95,11 +98,13 @@ class Orchestrator:
             config: Application configuration
             usgs_client: USGS client (created if not provided)
             slack_client: Slack client (created if not provided)
+            twitter_client: Twitter client (created if not provided)
             firestore_client: Firestore client (created if not provided)
         """
         self.config = config
         self.usgs_client = usgs_client or USGSClient()
         self.slack_client = slack_client or SlackClient()
+        self.twitter_client = twitter_client or TwitterClient()
         self.firestore_client = firestore_client or FirestoreClient(
             FirestoreConfig(
                 database=config.firestore_database,
@@ -139,6 +144,8 @@ class Orchestrator:
     ) -> AlertResult:
         """Send an alert for an earthquake to a channel.
 
+        Routes to the appropriate client based on channel_type.
+
         Args:
             earthquake: The earthquake to alert on
             channel: The channel to send to
@@ -153,6 +160,20 @@ class Orchestrator:
             max_distance_km=100,
         )
 
+        # Route based on channel type
+        if channel.channel_type == "twitter":
+            return self._send_twitter_alert(earthquake, channel, nearby_pois)
+        else:
+            # Default to Slack
+            return self._send_slack_alert(earthquake, channel, nearby_pois)
+
+    def _send_slack_alert(
+        self,
+        earthquake: Earthquake,
+        channel: AlertChannel,
+        nearby_pois: list[tuple],
+    ) -> AlertResult:
+        """Send an alert via Slack webhook."""
         # Format message (pure core function)
         payload = format_slack_message(
             earthquake,
@@ -164,6 +185,58 @@ class Orchestrator:
         response = self.slack_client.send_message(
             channel.webhook_url,
             payload,
+        )
+
+        return AlertResult(
+            earthquake=earthquake,
+            channel=channel,
+            success=response.success,
+            error=response.error,
+        )
+
+    def _send_twitter_alert(
+        self,
+        earthquake: Earthquake,
+        channel: AlertChannel,
+        nearby_pois: list[tuple],
+    ) -> AlertResult:
+        """Send an alert via Twitter/X."""
+        # Check for credentials
+        if not channel.credentials:
+            return AlertResult(
+                earthquake=earthquake,
+                channel=channel,
+                success=False,
+                error="Twitter channel missing credentials",
+            )
+
+        # Convert credentials tuple to TwitterCredentials
+        creds_dict = dict(channel.credentials)
+        try:
+            twitter_creds = TwitterCredentials(
+                api_key=creds_dict["api_key"],
+                api_secret=creds_dict["api_secret"],
+                access_token=creds_dict["access_token"],
+                access_token_secret=creds_dict["access_token_secret"],
+            )
+        except KeyError as e:
+            return AlertResult(
+                earthquake=earthquake,
+                channel=channel,
+                success=False,
+                error=f"Twitter credentials missing key: {e}",
+            )
+
+        # Format tweet (pure core function)
+        tweet_text = format_twitter_message(
+            earthquake,
+            nearby_pois=nearby_pois,
+        )
+
+        # Send via shell
+        response = self.twitter_client.send_tweet(
+            tweet_text,
+            twitter_creds,
         )
 
         return AlertResult(

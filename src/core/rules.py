@@ -38,14 +38,17 @@ class AlertChannel:
 
     Attributes:
         name: Channel identifier
-        channel_type: Type of channel (e.g., 'slack', 'discord')
-        webhook_url: Webhook URL for notifications
+        channel_type: Type of channel (e.g., 'slack', 'twitter')
+        webhook_url: Webhook URL for notifications (used by Slack)
         rules: Alert rules for this channel
+        credentials: Optional credentials dict for channels requiring auth
+                    (e.g., Twitter API keys). Interpretation is channel-specific.
     """
     name: str
     channel_type: str
     webhook_url: str
     rules: AlertRule
+    credentials: tuple[tuple[str, str], ...] | None = None
 
 
 def matches_magnitude_rule(earthquake: Earthquake, rule: AlertRule) -> bool:

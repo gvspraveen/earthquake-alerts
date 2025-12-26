@@ -79,3 +79,20 @@ alert_channels:
       points_of_interest:
         - "SF Office"
         - "Oakland Office"
+
+  # Twitter/X alerts - public earthquake notifications
+  # Requires Twitter Developer API credentials (https://developer.twitter.com)
+  - name: "quake-alerts-twitter"
+    type: twitter
+    credentials:
+      api_key: "${secret:twitter-api-key}"
+      api_secret: "${secret:twitter-api-secret}"
+      access_token: "${secret:twitter-access-token}"
+      access_token_secret: "${secret:twitter-access-token-secret}"
+    rules:
+      min_magnitude: 3.0
+      bounds:
+        min_latitude: 35.9024
+        max_latitude: 39.18543
+        min_longitude: -122.92603
+        max_longitude: -120.71777

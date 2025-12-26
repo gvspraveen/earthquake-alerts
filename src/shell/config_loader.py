@@ -128,15 +128,38 @@ def _parse_channel(
     pois: list[PointOfInterest],
     secret_client: Optional[SecretManagerClient] = None,
 ) -> AlertChannel:
-    """Parse an alert channel from config data."""
-    webhook_url = _resolve_value(data["webhook_url"], secret_client)
+    """Parse an alert channel from config data.
+
+    Supports:
+    - Slack channels: use webhook_url
+    - Twitter channels: use credentials dict with api_key, api_secret,
+                       access_token, access_token_secret
+    """
+    channel_type = data.get("type", "slack")
     rules_data = data.get("rules", {})
+
+    # Parse webhook_url (used by Slack, optional for Twitter)
+    webhook_url = ""
+    if "webhook_url" in data:
+        webhook_url = _resolve_value(data["webhook_url"], secret_client)
+
+    # Parse credentials (used by Twitter and other OAuth channels)
+    credentials = None
+    if "credentials" in data:
+        creds_data = data["credentials"]
+        resolved_creds = {
+            key: _resolve_value(value, secret_client)
+            for key, value in creds_data.items()
+        }
+        # Convert to tuple of tuples for frozen dataclass compatibility
+        credentials = tuple(sorted(resolved_creds.items()))
 
     return AlertChannel(
         name=data["name"],
-        channel_type=data.get("type", "slack"),
+        channel_type=channel_type,
         webhook_url=webhook_url,
         rules=_parse_alert_rule(rules_data, pois),
+        credentials=credentials,
     )
 
 

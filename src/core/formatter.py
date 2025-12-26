@@ -272,3 +272,88 @@ def get_nearby_pois(
             nearby.append((poi, distance))
 
     return sorted(nearby, key=lambda x: x[1])
+
+
+def format_twitter_message(
+    earthquake: Earthquake,
+    nearby_pois: list[tuple[PointOfInterest, float]] | None = None,
+) -> str:
+    """Format an earthquake as a tweet (max 280 characters).
+
+    Pure function.
+
+    Prioritizes information in this order:
+    1. Magnitude + location (required)
+    2. Special alerts (tsunami, PAGER, felt reports)
+    3. Nearest POI distance
+    4. USGS link
+
+    Args:
+        earthquake: Earthquake to format
+        nearby_pois: Optional list of (POI, distance_km) tuples
+
+    Returns:
+        Tweet text, guaranteed to be <= 280 characters
+    """
+    # Build tweet components
+    lines = []
+
+    # Line 1: Magnitude + location (always included)
+    magnitude_prefix = ""
+    if earthquake.magnitude >= 6.0:
+        magnitude_prefix = "MAJOR "
+    elif earthquake.magnitude >= 5.0:
+        magnitude_prefix = "STRONG "
+
+    headline = f"{magnitude_prefix}M{earthquake.magnitude:.1f} earthquake - {earthquake.place}"
+    lines.append(headline)
+
+    # Line 2: Special alerts (prioritize by importance)
+    special_parts = []
+    if earthquake.tsunami:
+        special_parts.append("TSUNAMI WARNING")
+    if earthquake.alert and earthquake.alert in ("orange", "red"):
+        special_parts.append(f"PAGER: {earthquake.alert.upper()}")
+    if earthquake.felt and earthquake.felt >= 100:
+        if earthquake.felt >= 1000:
+            special_parts.append(f"Felt by {earthquake.felt:,}+ people")
+        else:
+            special_parts.append(f"Felt by {earthquake.felt}+ people")
+
+    if special_parts:
+        lines.append(" | ".join(special_parts))
+
+    # Line 3: Depth and/or nearest POI
+    info_parts = []
+    info_parts.append(f"Depth: {earthquake.depth_km:.0f}km")
+
+    if nearby_pois:
+        closest_poi, distance = nearby_pois[0]
+        info_parts.append(f"{distance:.0f}km from {closest_poi.name}")
+
+    lines.append(" | ".join(info_parts))
+
+    # Line 4: USGS link (if space allows)
+    usgs_link = earthquake.url or ""
+
+    # Build tweet and check length
+    tweet = "\n".join(lines)
+
+    # Add link if it fits
+    if usgs_link:
+        tweet_with_link = f"{tweet}\n{usgs_link}"
+        if len(tweet_with_link) <= 280:
+            tweet = tweet_with_link
+
+    # Truncate if still too long (shouldn't happen with good formatting)
+    if len(tweet) > 280:
+        # Truncate headline if needed
+        max_headline_len = 280 - len("\n".join(lines[1:])) - 4  # 4 for "...\n"
+        if max_headline_len > 20:
+            lines[0] = lines[0][:max_headline_len] + "..."
+            tweet = "\n".join(lines)
+        else:
+            # Last resort: just truncate the whole thing
+            tweet = tweet[:277] + "..."
+
+    return tweet

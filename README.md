@@ -8,8 +8,9 @@ A serverless earthquake monitoring application that fetches real-time earthquake
 
 - **Real-time Monitoring**: Polls USGS Earthquake API for new events
 - **Configurable Alerts**: Set magnitude thresholds, geographic bounds, and points of interest
-- **Multiple Channels**: Route alerts to Slack and/or Twitter/X
+- **Multiple Channels**: Route alerts to Slack, Twitter/X, and/or WhatsApp
 - **Twitter Integration**: Automatic tweets via [@quake_alerts](https://x.com/quake_alerts)
+- **WhatsApp Groups**: Send alerts to WhatsApp groups via Twilio
 - **Proximity Alerts**: Get notified when earthquakes occur near specific locations
 - **Deduplication**: Prevents duplicate alerts using Firestore persistence
 - **Serverless**: Runs on Google Cloud Functions with Cloud Scheduler
@@ -19,20 +20,20 @@ A serverless earthquake monitoring application that fetches real-time earthquake
 This project follows the **Functional Core, Imperative Shell** pattern for clean separation of concerns and easy testing:
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         IMPERATIVE SHELL                             │
-│  ┌───────────┐ ┌───────────┐ ┌─────────────┐ ┌───────────────────┐  │
-│  │USGS Client│ │Slack Client│ │Twitter Client│ │ Firestore Client │  │
-│  └─────┬─────┘ └─────┬─────┘ └──────┬──────┘ └─────────┬─────────┘  │
-└────────┼─────────────┼──────────────┼──────────────────┼────────────┘
-         │             │              │                  │
-         ▼             ▼              ▼                  ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                         FUNCTIONAL CORE                              │
-│  • Earthquake parsing    • Alert rule evaluation                     │
-│  • Geo calculations      • Message formatting (Slack + Twitter)      │
-│  • Deduplication logic   (All pure functions - no I/O)               │
-└─────────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────────────────┐
+│                              IMPERATIVE SHELL                                  │
+│ ┌──────────┐ ┌───────────┐ ┌─────────────┐ ┌──────────────┐ ┌──────────────┐  │
+│ │USGS Client│ │Slack Client│ │Twitter Client│ │WhatsApp Client│ │Firestore    │  │
+│ └────┬─────┘ └─────┬─────┘ └──────┬──────┘ └──────┬───────┘ └──────┬───────┘  │
+└──────┼─────────────┼──────────────┼───────────────┼────────────────┼──────────┘
+       │             │              │               │                │
+       ▼             ▼              ▼               ▼                ▼
+┌───────────────────────────────────────────────────────────────────────────────┐
+│                              FUNCTIONAL CORE                                   │
+│  • Earthquake parsing    • Alert rule evaluation                               │
+│  • Geo calculations      • Message formatting (Slack, Twitter, WhatsApp)       │
+│  • Deduplication logic   (All pure functions - no I/O)                         │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Quick Start
@@ -219,6 +220,40 @@ echo -n "YOUR_ACCESS_TOKEN_SECRET" | gcloud secrets create twitter-access-token-
 
 5. Add the Twitter channel to your config (see example above)
 
+### WhatsApp Setup (via Twilio)
+
+To add WhatsApp alerts:
+
+1. Create a Twilio account at [twilio.com](https://www.twilio.com)
+2. Enable WhatsApp in your Twilio account ([WhatsApp setup](https://www.twilio.com/docs/whatsapp))
+3. Get your Account SID and Auth Token from the Twilio Console
+4. Get your WhatsApp-enabled phone number (sandbox or approved number)
+5. Store credentials in Secret Manager:
+
+```bash
+echo -n "YOUR_ACCOUNT_SID" | gcloud secrets create twilio-account-sid --data-file=-
+echo -n "YOUR_AUTH_TOKEN" | gcloud secrets create twilio-auth-token --data-file=-
+```
+
+6. Add the WhatsApp channel to your config:
+
+```yaml
+alert_channels:
+  - name: "earthquake-whatsapp"
+    type: whatsapp
+    credentials:
+      account_sid: "${secret:twilio-account-sid}"
+      auth_token: "${secret:twilio-auth-token}"
+      from_number: "+14155238886"  # Your Twilio WhatsApp number
+      to_numbers:
+        - "+1234567890"  # Recipient phone numbers
+        - "+0987654321"
+    rules:
+      min_magnitude: 4.0
+```
+
+**Note**: For the Twilio WhatsApp Sandbox, recipients must first send a message to your sandbox number to opt-in.
+
 ### Environment Variables
 
 | Variable | Description | Required |
@@ -267,12 +302,13 @@ earthquake-alerts/
 │   │   ├── earthquake.py   # Data models & parsing
 │   │   ├── geo.py          # Distance calculations
 │   │   ├── rules.py        # Alert rule evaluation
-│   │   ├── formatter.py    # Message formatting (Slack + Twitter)
+│   │   ├── formatter.py    # Message formatting (Slack, Twitter, WhatsApp)
 │   │   └── dedup.py        # Deduplication logic
 │   ├── shell/          # Imperative Shell (I/O)
 │   │   ├── usgs_client.py      # USGS API
 │   │   ├── slack_client.py     # Slack webhooks
 │   │   ├── twitter_client.py   # Twitter/X API (OAuth 1.0a)
+│   │   ├── whatsapp_client.py  # WhatsApp via Twilio
 │   │   ├── firestore_client.py # Dedup storage
 │   │   └── config_loader.py    # Configuration
 │   ├── orchestrator.py  # Wires core + shell

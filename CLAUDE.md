@@ -20,6 +20,7 @@ This project strictly follows the **Functional Core, Imperative Shell** pattern 
    - USGS API client (HTTP)
    - Slack webhook client (HTTP)
    - Twitter/X API client (OAuth 1.0a)
+   - WhatsApp client via Twilio
    - Firestore client (database)
    - Secret Manager client (credentials)
    - Configuration loading (environment/files)
@@ -57,6 +58,7 @@ earthquake-alerts/
 │   │   ├── usgs_client.py    # USGS API client
 │   │   ├── slack_client.py   # Slack webhook client
 │   │   ├── twitter_client.py # Twitter/X API client (OAuth 1.0a)
+│   │   ├── whatsapp_client.py # WhatsApp via Twilio
 │   │   ├── firestore_client.py # Firestore for deduplication
 │   │   ├── secret_manager_client.py # Secret Manager for secrets
 │   │   └── config_loader.py  # Config loading
@@ -104,6 +106,9 @@ Cloud Scheduler (cron)
 │                 │     └──────────────┘
 │                 │     ┌──────────────┐
 │                 │────▶│Twitter Client│──▶ Twitter/X API
+│                 │     └──────────────┘
+│                 │     ┌──────────────┐
+│                 │────▶│WhatsApp Client│──▶ Twilio API
 └─────────────────┘     └──────────────┘
 ```
 
@@ -128,7 +133,10 @@ Cloud Scheduler (cron)
 4. **Twitter/X via OAuth 1.0a**: Uses Twitter API v2 with user context authentication
    - Credentials stored in Secret Manager
    - Tweets formatted to 280 char limit with prioritized content
-5. **USGS FDSN API**: Supports custom bounding boxes and time ranges
+5. **WhatsApp via Twilio**: Uses Twilio's WhatsApp Business API
+   - Supports sending to multiple recipients (groups)
+   - Rich message formatting with emojis
+6. **USGS FDSN API**: Supports custom bounding boxes and time ranges
 
 ## Testing Strategy
 - **Core tests**: Fast unit tests, no mocks needed, test pure logic
@@ -181,6 +189,7 @@ gcloud scheduler jobs create http earthquake-monitor-scheduler \
 **Supported channel types:**
 - `slack` - Slack incoming webhooks
 - `twitter` - Twitter/X API (OAuth 1.0a)
+- `whatsapp` - WhatsApp via Twilio
 
 **Twitter channel config example:**
 ```yaml
@@ -193,6 +202,21 @@ gcloud scheduler jobs create http earthquake-monitor-scheduler \
     access_token_secret: "${secret:twitter-access-token-secret}"
   rules:
     min_magnitude: 3.0
+```
+
+**WhatsApp channel config example:**
+```yaml
+- name: "earthquake-whatsapp"
+  type: whatsapp
+  credentials:
+    account_sid: "${secret:twilio-account-sid}"
+    auth_token: "${secret:twilio-auth-token}"
+    from_number: "+14155238886"
+    to_numbers:
+      - "+1234567890"
+      - "+0987654321"
+  rules:
+    min_magnitude: 4.0
 ```
 
 ### Adding New Alert Rules

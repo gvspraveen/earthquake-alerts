@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useState, useRef, useEffect } from "react";
 
 interface LocaleNav {
   slug: string;
@@ -22,9 +23,27 @@ const DEFAULT_LOCALES: LocaleNav[] = [
 
 export default function Header({ currentLocale, locales = DEFAULT_LOCALES }: HeaderProps) {
   const router = useRouter();
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const handleLocaleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    router.push(`/${e.target.value}`);
+  const currentLocaleName = locales.find((l) => l.slug === currentLocale)?.name ?? currentLocale;
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleSelect = (slug: string) => {
+    setIsOpen(false);
+    if (slug !== currentLocale) {
+      router.push(`/${slug}`);
+    }
   };
 
   return (
@@ -53,31 +72,53 @@ export default function Header({ currentLocale, locales = DEFAULT_LOCALES }: Hea
           </span>
         </Link>
 
-        <div className="relative">
-          <select
-            value={currentLocale}
-            onChange={handleLocaleChange}
+        <div className="relative" ref={dropdownRef}>
+          <button
+            onClick={() => setIsOpen(!isOpen)}
+            aria-haspopup="listbox"
+            aria-expanded={isOpen}
             aria-label="Select location"
-            className="appearance-none bg-slate-800/50 border border-slate-700 text-white text-sm
-                       rounded-lg pl-3 pr-8 py-2 cursor-pointer
+            className="flex items-center gap-2 bg-slate-800/50 border border-slate-700 text-white text-sm
+                       rounded-lg px-3 py-2 cursor-pointer
                        hover:bg-slate-700/50 hover:border-slate-600
                        focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent
                        transition-colors"
           >
-            {locales.map((locale) => (
-              <option key={locale.slug} value={locale.slug}>
-                {locale.name}
-              </option>
-            ))}
-          </select>
-          <svg
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
+            <span>{currentLocaleName}</span>
+            <svg
+              className={`w-4 h-4 text-slate-400 transition-transform ${isOpen ? "rotate-180" : ""}`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+
+          {isOpen && (
+            <ul
+              role="listbox"
+              className="absolute right-0 mt-2 w-44 bg-slate-800 border border-slate-700 rounded-lg
+                         shadow-lg shadow-black/20 overflow-hidden z-50"
+            >
+              {locales.map((locale) => (
+                <li key={locale.slug}>
+                  <button
+                    role="option"
+                    aria-selected={locale.slug === currentLocale}
+                    onClick={() => handleSelect(locale.slug)}
+                    className={`w-full text-left px-4 py-2.5 text-sm transition-colors
+                      ${locale.slug === currentLocale
+                        ? "bg-primary-600 text-white"
+                        : "text-slate-300 hover:bg-slate-700 hover:text-white"
+                      }`}
+                  >
+                    {locale.name}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </div>
     </header>

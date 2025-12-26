@@ -1,7 +1,9 @@
 # Earthquake Alerts - Project Context
 
 ## Overview
-A serverless earthquake monitoring application that fetches earthquake data from USGS and sends configurable alerts to Slack channels. Designed for deployment on Google Cloud Platform (Cloud Functions + Firestore).
+A serverless earthquake monitoring application that fetches earthquake data from USGS and sends configurable alerts to Slack and Twitter/X. Designed for deployment on Google Cloud Platform (Cloud Functions + Firestore).
+
+**Live Twitter**: [@quake_alerts](https://x.com/quake_alerts) - Automated earthquake alerts for the Bay Area
 
 ## Architecture Pattern: Functional Core, Imperative Shell
 
@@ -17,7 +19,9 @@ This project strictly follows the **Functional Core, Imperative Shell** pattern 
 2. **Imperative Shell** (`src/shell/`): Handles all I/O and side effects
    - USGS API client (HTTP)
    - Slack webhook client (HTTP)
+   - Twitter/X API client (OAuth 1.0a)
    - Firestore client (database)
+   - Secret Manager client (credentials)
    - Configuration loading (environment/files)
    - Keep this layer thin and simple
 
@@ -52,6 +56,7 @@ earthquake-alerts/
 │   ├── shell/                # IMPERATIVE SHELL (I/O & effects)
 │   │   ├── usgs_client.py    # USGS API client
 │   │   ├── slack_client.py   # Slack webhook client
+│   │   ├── twitter_client.py # Twitter/X API client (OAuth 1.0a)
 │   │   ├── firestore_client.py # Firestore for deduplication
 │   │   ├── secret_manager_client.py # Secret Manager for secrets
 │   │   └── config_loader.py  # Config loading
@@ -96,6 +101,9 @@ Cloud Scheduler (cron)
          ▼
 ┌─────────────────┐     ┌──────────────┐
 │  Orchestrator   │────▶│ Slack Client │──▶ Slack Webhooks
+│                 │     └──────────────┘
+│                 │     ┌──────────────┐
+│                 │────▶│Twitter Client│──▶ Twitter/X API
 └─────────────────┘     └──────────────┘
 ```
 
@@ -117,7 +125,10 @@ Cloud Scheduler (cron)
    - Supports both default and named databases via configuration
 2. **Cloud Functions**: Event-driven, pay-per-use, triggered by Cloud Scheduler
 3. **Webhook-based Slack**: Simple, no OAuth flow, just POST to URL
-4. **USGS FDSN API**: Supports custom bounding boxes and time ranges
+4. **Twitter/X via OAuth 1.0a**: Uses Twitter API v2 with user context authentication
+   - Credentials stored in Secret Manager
+   - Tweets formatted to 280 char limit with prioritized content
+5. **USGS FDSN API**: Supports custom bounding boxes and time ranges
 
 ## Testing Strategy
 - **Core tests**: Fast unit tests, no mocks needed, test pure logic
@@ -166,6 +177,23 @@ gcloud scheduler jobs create http earthquake-monitor-scheduler \
 2. Add channel type to config schema
 3. Update orchestrator to route to new client
 4. Core logic remains unchanged
+
+**Supported channel types:**
+- `slack` - Slack incoming webhooks
+- `twitter` - Twitter/X API (OAuth 1.0a)
+
+**Twitter channel config example:**
+```yaml
+- name: "quake-alerts-twitter"
+  type: twitter
+  credentials:
+    api_key: "${secret:twitter-api-key}"
+    api_secret: "${secret:twitter-api-secret}"
+    access_token: "${secret:twitter-access-token}"
+    access_token_secret: "${secret:twitter-access-token-secret}"
+  rules:
+    min_magnitude: 3.0
+```
 
 ### Adding New Alert Rules
 1. Add rule evaluation logic to `src/core/rules.py` (pure function)

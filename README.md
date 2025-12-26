@@ -1,12 +1,15 @@
 # Earthquake Alerts
 
-A serverless earthquake monitoring application that fetches real-time earthquake data from USGS and sends configurable alerts to Slack channels.
+A serverless earthquake monitoring application that fetches real-time earthquake data from USGS and sends configurable alerts to Slack and Twitter/X.
+
+**Live Twitter**: [@quake_alerts](https://x.com/quake_alerts) - Automated earthquake alerts for the Bay Area
 
 ## Features
 
 - **Real-time Monitoring**: Polls USGS Earthquake API for new events
 - **Configurable Alerts**: Set magnitude thresholds, geographic bounds, and points of interest
-- **Multiple Channels**: Route different alert levels to different Slack channels
+- **Multiple Channels**: Route alerts to Slack and/or Twitter/X
+- **Twitter Integration**: Automatic tweets via [@quake_alerts](https://x.com/quake_alerts)
 - **Proximity Alerts**: Get notified when earthquakes occur near specific locations
 - **Deduplication**: Prevents duplicate alerts using Firestore persistence
 - **Serverless**: Runs on Google Cloud Functions with Cloud Scheduler
@@ -16,20 +19,20 @@ A serverless earthquake monitoring application that fetches real-time earthquake
 This project follows the **Functional Core, Imperative Shell** pattern for clean separation of concerns and easy testing:
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    IMPERATIVE SHELL                         │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
-│  │ USGS Client │  │Slack Client │  │ Firestore Client    │  │
-│  └──────┬──────┘  └──────┬──────┘  └──────────┬──────────┘  │
-└─────────┼────────────────┼─────────────────────┼────────────┘
-          │                │                     │
-          ▼                ▼                     ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    FUNCTIONAL CORE                          │
-│  • Earthquake parsing    • Alert rule evaluation            │
-│  • Geo calculations      • Message formatting               │
-│  • Deduplication logic   (All pure functions - no I/O)      │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                         IMPERATIVE SHELL                             │
+│  ┌───────────┐ ┌───────────┐ ┌─────────────┐ ┌───────────────────┐  │
+│  │USGS Client│ │Slack Client│ │Twitter Client│ │ Firestore Client │  │
+│  └─────┬─────┘ └─────┬─────┘ └──────┬──────┘ └─────────┬─────────┘  │
+└────────┼─────────────┼──────────────┼──────────────────┼────────────┘
+         │             │              │                  │
+         ▼             ▼              ▼                  ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                         FUNCTIONAL CORE                              │
+│  • Earthquake parsing    • Alert rule evaluation                     │
+│  • Geo calculations      • Message formatting (Slack + Twitter)      │
+│  • Deduplication logic   (All pure functions - no I/O)               │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Quick Start
@@ -172,17 +175,23 @@ monitoring_regions:
 
 # Alert channels with different thresholds
 alert_channels:
-  - name: "critical"
-    type: slack
-    webhook_url: "${SLACK_WEBHOOK_CRITICAL}"
-    rules:
-      min_magnitude: 5.0
-
+  # Slack channel
   - name: "all-earthquakes"
     type: slack
-    webhook_url: "${SLACK_WEBHOOK_ALL}"
+    webhook_url: "${secret:slack-webhook-url}"
     rules:
       min_magnitude: 2.5
+
+  # Twitter/X channel
+  - name: "quake-alerts-twitter"
+    type: twitter
+    credentials:
+      api_key: "${secret:twitter-api-key}"
+      api_secret: "${secret:twitter-api-secret}"
+      access_token: "${secret:twitter-access-token}"
+      access_token_secret: "${secret:twitter-access-token-secret}"
+    rules:
+      min_magnitude: 3.0
 
 # Proximity alerts for specific locations
 points_of_interest:
@@ -191,6 +200,24 @@ points_of_interest:
     longitude: -122.4194
     alert_radius_km: 50
 ```
+
+### Twitter/X Setup
+
+To add Twitter alerts:
+
+1. Create a Twitter Developer account at [developer.twitter.com](https://developer.twitter.com)
+2. Create a new app with **Read and Write** permissions
+3. Generate API Key, API Secret, Access Token, and Access Token Secret
+4. Store credentials in Secret Manager:
+
+```bash
+echo -n "YOUR_API_KEY" | gcloud secrets create twitter-api-key --data-file=-
+echo -n "YOUR_API_SECRET" | gcloud secrets create twitter-api-secret --data-file=-
+echo -n "YOUR_ACCESS_TOKEN" | gcloud secrets create twitter-access-token --data-file=-
+echo -n "YOUR_ACCESS_TOKEN_SECRET" | gcloud secrets create twitter-access-token-secret --data-file=-
+```
+
+5. Add the Twitter channel to your config (see example above)
 
 ### Environment Variables
 
@@ -240,11 +267,12 @@ earthquake-alerts/
 │   │   ├── earthquake.py   # Data models & parsing
 │   │   ├── geo.py          # Distance calculations
 │   │   ├── rules.py        # Alert rule evaluation
-│   │   ├── formatter.py    # Message formatting
+│   │   ├── formatter.py    # Message formatting (Slack + Twitter)
 │   │   └── dedup.py        # Deduplication logic
 │   ├── shell/          # Imperative Shell (I/O)
 │   │   ├── usgs_client.py      # USGS API
 │   │   ├── slack_client.py     # Slack webhooks
+│   │   ├── twitter_client.py   # Twitter/X API (OAuth 1.0a)
 │   │   ├── firestore_client.py # Dedup storage
 │   │   └── config_loader.py    # Configuration
 │   ├── orchestrator.py  # Wires core + shell

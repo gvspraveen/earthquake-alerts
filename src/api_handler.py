@@ -201,6 +201,82 @@ def get_latest_earthquake(request: Request) -> Response:
     return _json_response(response_data, origin=origin)
 
 
+def get_recent_earthquakes(request: Request) -> Response:
+    """API endpoint: Get recent earthquakes for a locale.
+
+    Query params:
+        locale: URL slug (e.g., "sanramon", "bayarea", "la")
+        limit: Number of earthquakes to return (default 10, max 50)
+
+    Returns:
+        JSON with region info and list of recent earthquakes
+    """
+    origin = request.headers.get("Origin")
+
+    # Handle CORS preflight
+    if request.method == "OPTIONS":
+        response = Response("", status=204)
+        for key, value in _cors_headers(origin).items():
+            response.headers[key] = value
+        return response
+
+    # Get locale from query params
+    locale = request.args.get("locale", "sanramon")
+    limit = min(int(request.args.get("limit", "10")), 50)
+
+    if locale not in LOCALES:
+        return _json_response(
+            {"error": f"Unknown locale: {locale}", "available": list(LOCALES.keys())},
+            status=404,
+            origin=origin,
+        )
+
+    locale_config = LOCALES[locale]
+    bounds = locale_config["bounds"]
+    min_magnitude = locale_config["min_magnitude"]
+
+    # Fetch earthquakes from USGS (look back 30 days)
+    client = USGSClient()
+    now = datetime.now(timezone.utc)
+    start = now - timedelta(days=30)
+
+    query = USGSQueryParams(
+        bounds=bounds,
+        min_magnitude=min_magnitude,
+        start_time=start,
+        end_time=now,
+        limit=limit,
+    )
+
+    try:
+        geojson = client.fetch_earthquakes(query)
+        earthquakes = parse_earthquakes(geojson)
+    except Exception as e:
+        logger.exception("Failed to fetch earthquakes from USGS")
+        return _json_response(
+            {"error": "Failed to fetch earthquake data"},
+            status=502,
+            origin=origin,
+        )
+
+    # Build response
+    response_data: dict[str, Any] = {
+        "region": {
+            "slug": locale,
+            "name": locale_config["name"],
+            "display_name": locale_config["display_name"],
+            "bounds": _bounds_to_dict(bounds),
+            "center": locale_config["center"],
+        },
+        "min_magnitude_filter": min_magnitude,
+        "earthquakes": [_earthquake_to_dict(eq) for eq in earthquakes],
+        "count": len(earthquakes),
+        "fetched_at": now.isoformat(),
+    }
+
+    return _json_response(response_data, origin=origin)
+
+
 def get_locales(request: Request) -> Response:
     """API endpoint: List all available locales.
 

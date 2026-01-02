@@ -356,7 +356,10 @@ class TestTwitterClientUploadMedia:
         request = responses.calls[0].request
         # "TEST" base64 encoded is "VEVTVA=="
         # request.body is bytes, so decode it for string comparison
+        # Body is URL-encoded form data, so decode URL encoding as well
+        from urllib.parse import unquote
         body_str = request.body.decode() if isinstance(request.body, bytes) else request.body
+        body_str = unquote(body_str)
         assert "VEVTVA==" in body_str
 
     @responses.activate

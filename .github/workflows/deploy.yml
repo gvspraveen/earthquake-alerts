@@ -117,6 +117,34 @@ jobs:
             --timeout 30s \
             --env-vars-file env-vars.yaml
 
+      - name: Deploy Cloud Function (api-recent-earthquakes)
+        run: |
+          gcloud functions deploy api-recent-earthquakes \
+            --gen2 \
+            --runtime python311 \
+            --region ${{ env.REGION }} \
+            --source . \
+            --entry-point api_recent_earthquakes \
+            --trigger-http \
+            --allow-unauthenticated \
+            --memory 256MB \
+            --timeout 30s \
+            --env-vars-file env-vars.yaml
+
+      - name: Deploy Cloud Function (api-locales)
+        run: |
+          gcloud functions deploy api-locales \
+            --gen2 \
+            --runtime python311 \
+            --region ${{ env.REGION }} \
+            --source . \
+            --entry-point api_locales \
+            --trigger-http \
+            --allow-unauthenticated \
+            --memory 256MB \
+            --timeout 30s \
+            --env-vars-file env-vars.yaml
+
       - name: Verify deployment
         run: |
           FUNCTION_URL=$(gcloud functions describe ${{ env.FUNCTION_NAME }} \

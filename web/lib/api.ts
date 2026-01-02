@@ -40,6 +40,14 @@ export interface EarthquakeResponse {
   fetched_at: string;
 }
 
+export interface RecentEarthquakesResponse {
+  region: Region;
+  min_magnitude_filter: number;
+  earthquakes: Earthquake[];
+  count: number;
+  fetched_at: string;
+}
+
 export interface LocaleConfig {
   slug: string;
   name: string;
@@ -164,4 +172,24 @@ export function getMagnitudeColor(magnitude: number): string {
     return "#eab308"; // yellow-500
   }
   return "#22c55e"; // green-500
+}
+
+/**
+ * Fetch recent earthquakes for a locale.
+ */
+export async function fetchRecentEarthquakes(
+  localeSlug: string,
+  limit: number = 10,
+  signal?: AbortSignal
+): Promise<RecentEarthquakesResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/api-recent-earthquakes?locale=${localeSlug}&limit=${limit}`,
+    { signal }
+  );
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch recent earthquakes");
+  }
+
+  return response.json();
 }

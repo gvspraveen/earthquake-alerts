@@ -14,7 +14,7 @@ from flask import Request
 
 from src.orchestrator import Orchestrator
 from src.shell.config_loader import load_config, load_config_from_env
-from src.api_handler import get_latest_earthquake, get_locales
+from src.api_handler import get_latest_earthquake, get_locales, get_recent_earthquakes
 
 
 # Configure logging
@@ -152,6 +152,17 @@ def api_latest_earthquake(request: Request):
 def api_locales(request: Request):
     """API endpoint: List all available locales."""
     return get_locales(request)
+
+
+@functions_framework.http
+def api_recent_earthquakes(request: Request):
+    """API endpoint: Get recent earthquakes for a locale.
+
+    Query params:
+        locale: URL slug (e.g., "sanramon", "bayarea", "la")
+        limit: Number of earthquakes to return (default 10, max 50)
+    """
+    return get_recent_earthquakes(request)
 
 
 # For local testing

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import Header from "@/components/Header";
 import CountdownTimer from "@/components/CountdownTimer";
 import EarthquakeCard from "@/components/EarthquakeCard";
+import EarthquakeTable from "@/components/EarthquakeTable";
 import MapWrapper from "@/components/MapWrapper";
 import {
   type Earthquake,
@@ -12,6 +13,7 @@ import {
   type LocaleConfig,
   API_BASE_URL,
   REFRESH_INTERVAL_MS,
+  fetchRecentEarthquakes,
 } from "@/lib/api";
 
 interface LocalePageProps {
@@ -37,6 +39,12 @@ export default function LocalePage({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Recent earthquakes state
+  const [recentEarthquakes, setRecentEarthquakes] = useState<Earthquake[]>([]);
+  const [showRecentTable, setShowRecentTable] = useState(false);
+  const [loadingRecent, setLoadingRecent] = useState(false);
+  const [recentError, setRecentError] = useState<string | null>(null);
 
   // Use region data from API once loaded, fallback to initial props
   const displayName = region?.display_name ?? initialDisplayName;
@@ -85,6 +93,31 @@ export default function LocalePage({
       abortControllerRef.current?.abort();
     };
   }, [localeSlug]);
+
+  // Reset recent earthquakes when locale changes
+  useEffect(() => {
+    setShowRecentTable(false);
+    setRecentEarthquakes([]);
+    setRecentError(null);
+  }, [localeSlug]);
+
+  async function handleLoadRecentEarthquakes() {
+    if (loadingRecent) return;
+
+    setLoadingRecent(true);
+    setRecentError(null);
+
+    try {
+      const data = await fetchRecentEarthquakes(localeSlug, 10);
+      setRecentEarthquakes(data.earthquakes);
+      setShowRecentTable(true);
+    } catch (err) {
+      console.error("Error fetching recent earthquakes:", err);
+      setRecentError("Unable to load recent earthquakes. Please try again.");
+    } finally {
+      setLoadingRecent(false);
+    }
+  }
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -186,6 +219,65 @@ export default function LocalePage({
                 </a>
               </div>
             </div>
+          </section>
+
+          {/* Recent Earthquakes Section */}
+          <section className="space-y-4">
+            {!showRecentTable ? (
+              <div className="text-center">
+                <button
+                  onClick={handleLoadRecentEarthquakes}
+                  disabled={loadingRecent}
+                  className="inline-flex items-center gap-2 px-6 py-3 bg-slate-800 hover:bg-slate-700
+                             disabled:bg-slate-800/50 disabled:cursor-not-allowed
+                             text-white font-medium rounded-lg transition-colors"
+                >
+                  {loadingRecent ? (
+                    <>
+                      <div
+                        className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"
+                        role="status"
+                        aria-label="Loading"
+                      />
+                      Loading...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M4 6h16M4 10h16M4 14h16M4 18h16"
+                        />
+                      </svg>
+                      Load Last 10 Earthquakes
+                    </>
+                  )}
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xl font-semibold text-white">
+                    Recent Earthquakes
+                  </h2>
+                  <button
+                    onClick={() => setShowRecentTable(false)}
+                    className="text-sm text-slate-400 hover:text-white transition-colors"
+                  >
+                    Hide
+                  </button>
+                </div>
+                <EarthquakeTable earthquakes={recentEarthquakes} />
+              </>
+            )}
+
+            {recentError && (
+              <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg text-center">
+                <p className="text-yellow-400 text-sm">{recentError}</p>
+              </div>
+            )}
           </section>
         </div>
       </main>

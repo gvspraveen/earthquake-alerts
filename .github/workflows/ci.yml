@@ -5,6 +5,9 @@ on:
     branches:
       - main
 
+env:
+  API_URL: https://earthquake-api-793997436187.us-central1.run.app
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -24,3 +27,81 @@ jobs:
 
       - name: Run tests
         run: pytest tests/ -v
+
+  api-sanity:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test API health endpoint
+        run: |
+          response=$(curl -s -w "\n%{http_code}" "${{ env.API_URL }}/health")
+          http_code=$(echo "$response" | tail -1)
+          body=$(echo "$response" | head -1)
+
+          if [ "$http_code" != "200" ]; then
+            echo "❌ Health check failed with status $http_code"
+            exit 1
+          fi
+          echo "✅ Health check passed: $body"
+
+      - name: Test latest earthquake endpoint
+        run: |
+          response=$(curl -s -w "\n%{http_code}" "${{ env.API_URL }}/api-latest-earthquake?locale=sanramon")
+          http_code=$(echo "$response" | tail -1)
+
+          if [ "$http_code" != "200" ]; then
+            echo "❌ Latest earthquake endpoint failed with status $http_code"
+            exit 1
+          fi
+
+          # Verify response has expected fields
+          if echo "$response" | head -1 | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'region' in d and 'min_magnitude_filter' in d"; then
+            echo "✅ Latest earthquake endpoint passed"
+          else
+            echo "❌ Latest earthquake response missing expected fields"
+            exit 1
+          fi
+
+      - name: Test recent earthquakes endpoint
+        run: |
+          response=$(curl -s -w "\n%{http_code}" "${{ env.API_URL }}/api-recent-earthquakes?locale=sanramon&limit=5")
+          http_code=$(echo "$response" | tail -1)
+
+          if [ "$http_code" != "200" ]; then
+            echo "❌ Recent earthquakes endpoint failed with status $http_code"
+            exit 1
+          fi
+
+          # Verify response has expected fields
+          if echo "$response" | head -1 | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'earthquakes' in d and 'count' in d"; then
+            echo "✅ Recent earthquakes endpoint passed"
+          else
+            echo "❌ Recent earthquakes response missing expected fields"
+            exit 1
+          fi
+
+      - name: Test locales endpoint
+        run: |
+          response=$(curl -s -w "\n%{http_code}" "${{ env.API_URL }}/api-locales")
+          http_code=$(echo "$response" | tail -1)
+
+          if [ "$http_code" != "200" ]; then
+            echo "❌ Locales endpoint failed with status $http_code"
+            exit 1
+          fi
+
+          # Verify response has expected fields
+          if echo "$response" | head -1 | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'locales' in d and len(d['locales']) > 0"; then
+            echo "✅ Locales endpoint passed"
+          else
+            echo "❌ Locales response missing expected fields"
+            exit 1
+          fi
+
+      - name: Summary
+        run: |
+          echo ""
+          echo "🎉 All API sanity checks passed!"
+          echo "   - /health"
+          echo "   - /api-latest-earthquake"
+          echo "   - /api-recent-earthquakes"
+          echo "   - /api-locales"

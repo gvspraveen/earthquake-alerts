@@ -42,11 +42,15 @@ This project strictly follows the **Functional Core, Imperative Shell** pattern 
 earthquake-alerts/
 ├── CLAUDE.md                 # This file
 ├── README.md                 # User documentation
-├── main.py                   # Root entry point (imports from src)
+├── main.py                   # Root entry point for Cloud Function
 ├── env-vars.yaml             # Environment variables for deployment
 ├── config/
 │   ├── config.example.yaml   # Example configuration
 │   └── config.yaml           # Local config (gitignored)
+├── api/                      # FastAPI service (Cloud Run)
+│   ├── main.py               # FastAPI application with API endpoints
+│   ├── requirements.txt      # Minimal deps (fastapi, uvicorn, requests)
+│   └── Dockerfile            # Container config
 ├── src/
 │   ├── core/                 # FUNCTIONAL CORE (pure functions)
 │   │   ├── earthquake.py     # Earthquake data models & parsing
@@ -64,9 +68,16 @@ earthquake-alerts/
 │   │   └── config_loader.py  # Config loading
 │   ├── orchestrator.py       # Wires core + shell
 │   └── main.py               # Cloud Function entry point
+├── web/                      # Next.js frontend (Cloud Run)
+│   ├── app/                  # App Router pages
+│   ├── lib/api.ts            # API client
+│   └── Dockerfile            # Container config
 ├── tests/
 │   ├── core/                 # Unit tests (fast, no mocks)
 │   └── shell/                # Integration tests
+├── .github/workflows/
+│   ├── ci.yml                # PR checks (tests + API sanity)
+│   └── deploy.yml            # Deploy to GCP
 ├── requirements.txt
 └── pyproject.toml
 ```
@@ -229,6 +240,8 @@ gcloud scheduler jobs create http earthquake-monitor-scheduler \
 
 The `web/` directory contains a Next.js 15 application for earthquake.city - a mobile-first landing page with Stripe-like aesthetics.
 
+**Live Site**: [earthquake.city](https://earthquake.city)
+
 ### Web Architecture
 ```
 earthquake.city/[locale]  (e.g., /sanramon, /bayarea, /la)
@@ -236,16 +249,19 @@ earthquake.city/[locale]  (e.g., /sanramon, /bayarea, /la)
          ▼
 ┌─────────────────────────┐
 │   Next.js on Cloud Run  │
+│   (earthquake-city)     │
 │   - Static generation   │
-│   - ISR for fresh data  │
+│   - Client-side fetch   │
 └───────────┬─────────────┘
             │
             ▼
 ┌─────────────────────────┐
-│  Cloud Function API     │
-│  /api-latest-earthquake │
-│  - Returns latest quake │
-│  - Per region/locale    │
+│  FastAPI on Cloud Run   │
+│  (earthquake-api)       │
+│  - /api-latest-earthquake│
+│  - /api-recent-earthquakes│
+│  - /api-locales         │
+│  - /health              │
 └─────────────────────────┘
 ```
 
@@ -254,6 +270,26 @@ earthquake.city/[locale]  (e.g., /sanramon, /bayarea, /la)
 - **Styling**: Tailwind CSS
 - **Globe**: Globe.gl (WebGL 3D visualization)
 - **Hosting**: GCP Cloud Run
+
+### API Service (api/)
+
+The API is a separate FastAPI service deployed to Cloud Run. This architecture was chosen over Cloud Functions for:
+- **Faster cold starts**: ~100ms vs 300-450ms
+- **Single deployment**: 1 service vs 3 functions
+- **Minimal dependencies**: 3 packages vs 10
+
+### API Endpoints
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api-latest-earthquake?locale=X` | Latest earthquake for a locale |
+| `GET /api-recent-earthquakes?locale=X&limit=N` | Recent earthquakes (max 50) |
+| `GET /api-locales` | List all available locales |
+| `GET /health` | Health check |
+
+### Supported Locales
+- `sanramon` - San Ramon, CA
+- `bayarea` - San Francisco Bay Area
+- `la` - Los Angeles, CA
 
 ### Web Development Commands
 ```bash
@@ -268,15 +304,53 @@ npm run dev
 # Build for production
 npm run build
 
-# Build and deploy to Cloud Run
-docker build -t earthquake-city --build-arg NEXT_PUBLIC_API_URL=https://... .
-docker push gcr.io/PROJECT/earthquake-city
-gcloud run deploy earthquake-city --image gcr.io/PROJECT/earthquake-city
+# Deploy to Cloud Run
+gcloud run deploy earthquake-city \
+  --source . \
+  --region us-central1 \
+  --set-env-vars "NEXT_PUBLIC_API_URL=https://earthquake-api-793997436187.us-central1.run.app"
 ```
 
-### API Endpoints (Cloud Function)
-- `api_latest_earthquake?locale=sanramon` - Get latest earthquake for a locale
-- `api_locales` - List all available locales
+### API Development Commands
+```bash
+cd api
+
+# Run locally
+pip install -r requirements.txt
+uvicorn main:app --reload
+
+# Deploy to Cloud Run
+gcloud run deploy earthquake-api \
+  --source . \
+  --region us-central1 \
+  --allow-unauthenticated
+```
+
+## CI/CD
+
+### GitHub Actions Workflows
+
+**ci.yml** - Runs on pull requests:
+- `test` job: Unit tests with pytest
+- `api-sanity` job: Tests production API endpoints
+
+**deploy.yml** - Runs on push to main:
+- Deploys `earthquake-monitor` Cloud Function
+- Deploys `earthquake-api` Cloud Run service
+- Deploys `earthquake-city` Cloud Run service (web)
+
+### Branch Protection
+PRs require both checks to pass before merge:
+- `test` - Unit tests must pass
+- `api-sanity` - Production API must be healthy
+
+## Deployed Services
+
+| Service | Type | URL | Purpose |
+|---------|------|-----|---------|
+| `earthquake-monitor` | Cloud Function | (scheduled) | Alert monitoring |
+| `earthquake-api` | Cloud Run | https://earthquake-api-793997436187.us-central1.run.app | Web API |
+| `earthquake-city` | Cloud Run | https://earthquake.city | Web frontend |
 
 ## Personal Preferences Applied
 - Always use Functional Core, Imperative Shell pattern

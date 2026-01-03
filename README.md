@@ -2,39 +2,51 @@
 
 A serverless earthquake monitoring application that fetches real-time earthquake data from USGS and sends configurable alerts to Slack and Twitter/X.
 
+**Live Site**: [earthquake.city](https://earthquake.city) - Real-time earthquake monitoring for California
+
 **Live Twitter**: [@quake_alerts](https://x.com/quake_alerts) - Automated earthquake alerts for the Bay Area
 
 ## Features
 
 - **Real-time Monitoring**: Polls USGS Earthquake API for new events
+- **Web Dashboard**: [earthquake.city](https://earthquake.city) with interactive map and recent earthquakes
 - **Configurable Alerts**: Set magnitude thresholds, geographic bounds, and points of interest
 - **Multiple Channels**: Route alerts to Slack, Twitter/X, and/or WhatsApp
 - **Twitter Integration**: Automatic tweets via [@quake_alerts](https://x.com/quake_alerts)
 - **WhatsApp Groups**: Send alerts to WhatsApp groups via Twilio
 - **Proximity Alerts**: Get notified when earthquakes occur near specific locations
 - **Deduplication**: Prevents duplicate alerts using Firestore persistence
-- **Serverless**: Runs on Google Cloud Functions with Cloud Scheduler
+- **Serverless**: Runs on Google Cloud (Cloud Functions + Cloud Run)
 
 ## Architecture
 
-This project follows the **Functional Core, Imperative Shell** pattern for clean separation of concerns and easy testing:
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           DEPLOYED SERVICES                                  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  Cloud Scheduler ──▶ earthquake-monitor (Cloud Function)                    │
+│                      - Fetches USGS data                                    │
+│                      - Sends alerts to Slack/Twitter/WhatsApp               │
+│                      - Uses Firestore for deduplication                     │
+│                                                                             │
+│  earthquake.city ──▶ earthquake-city (Cloud Run - Next.js)                  │
+│                      - Web frontend with interactive map                    │
+│                      - Shows latest & recent earthquakes                    │
+│                             │                                               │
+│                             ▼                                               │
+│                      earthquake-api (Cloud Run - FastAPI)                   │
+│                      - /api-latest-earthquake                               │
+│                      - /api-recent-earthquakes                              │
+│                      - /api-locales                                         │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
-```
-┌───────────────────────────────────────────────────────────────────────────────┐
-│                              IMPERATIVE SHELL                                  │
-│ ┌──────────┐ ┌───────────┐ ┌─────────────┐ ┌──────────────┐ ┌──────────────┐  │
-│ │USGS Client│ │Slack Client│ │Twitter Client│ │WhatsApp Client│ │Firestore    │  │
-│ └────┬─────┘ └─────┬─────┘ └──────┬──────┘ └──────┬───────┘ └──────┬───────┘  │
-└──────┼─────────────┼──────────────┼───────────────┼────────────────┼──────────┘
-       │             │              │               │                │
-       ▼             ▼              ▼               ▼                ▼
-┌───────────────────────────────────────────────────────────────────────────────┐
-│                              FUNCTIONAL CORE                                   │
-│  • Earthquake parsing    • Alert rule evaluation                               │
-│  • Geo calculations      • Message formatting (Slack, Twitter, WhatsApp)       │
-│  • Deduplication logic   (All pure functions - no I/O)                         │
-└───────────────────────────────────────────────────────────────────────────────┘
-```
+This project follows the **Functional Core, Imperative Shell** pattern:
+- **Functional Core** (`src/core/`): Pure functions for parsing, rules, formatting
+- **Imperative Shell** (`src/shell/`): I/O clients (USGS, Slack, Twitter, Firestore)
+- **Orchestrator**: Wires core and shell together
 
 ## Quick Start
 
@@ -297,25 +309,35 @@ python -m src.main
 
 ```
 earthquake-alerts/
+├── api/                # FastAPI service (Cloud Run)
+│   ├── main.py         # API endpoints
+│   ├── requirements.txt
+│   └── Dockerfile
+├── web/                # Next.js frontend (Cloud Run)
+│   ├── app/            # App Router pages
+│   └── Dockerfile
 ├── src/
 │   ├── core/           # Functional Core (pure functions)
 │   │   ├── earthquake.py   # Data models & parsing
 │   │   ├── geo.py          # Distance calculations
 │   │   ├── rules.py        # Alert rule evaluation
-│   │   ├── formatter.py    # Message formatting (Slack, Twitter, WhatsApp)
+│   │   ├── formatter.py    # Message formatting
 │   │   └── dedup.py        # Deduplication logic
 │   ├── shell/          # Imperative Shell (I/O)
 │   │   ├── usgs_client.py      # USGS API
 │   │   ├── slack_client.py     # Slack webhooks
-│   │   ├── twitter_client.py   # Twitter/X API (OAuth 1.0a)
+│   │   ├── twitter_client.py   # Twitter/X API
 │   │   ├── whatsapp_client.py  # WhatsApp via Twilio
 │   │   ├── firestore_client.py # Dedup storage
 │   │   └── config_loader.py    # Configuration
 │   ├── orchestrator.py  # Wires core + shell
 │   └── main.py          # Cloud Function entry
-└── tests/
-    ├── core/            # Unit tests (fast, no mocks)
-    └── shell/           # Integration tests
+├── tests/
+│   ├── core/            # Unit tests (fast, no mocks)
+│   └── shell/           # Integration tests
+└── .github/workflows/
+    ├── ci.yml           # PR checks (tests + API sanity)
+    └── deploy.yml       # Deploy to GCP
 ```
 
 ## Alert Message Format

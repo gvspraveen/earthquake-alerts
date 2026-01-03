@@ -1,5 +1,5 @@
-// API base URL - hardcoded since NEXT_PUBLIC_* env vars need build-time availability
-export const API_BASE_URL = "https://us-central1-gen-lang-client-0579637657.cloudfunctions.net";
+// API base URL - uses env var at build time, falls back to Cloud Run URL
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://earthquake-api-793997436187.us-central1.run.app";
 
 // Refresh interval for earthquake data (5 minutes)
 export const REFRESH_INTERVAL_MS = 5 * 60 * 1000;

@@ -66,32 +66,18 @@ export interface LocalesResponse {
   locales: LocaleConfig[];
 }
 
-// Fallback locale - used when API is unavailable during build
-// Source of truth: shared/fallback-locale.json (copied here for Docker build)
-import fallbackLocaleData from "./fallback-locale.json";
-
-const FALLBACK_LOCALES: LocaleConfig[] = [fallbackLocaleData];
-
 /**
  * Fetch all available locales from the API.
- * Falls back to static data during build when API is unavailable.
  */
 export async function fetchLocales(): Promise<LocaleConfig[]> {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api-locales`, {
-      next: { revalidate: 3600 }, // Cache for 1 hour
-    });
-    if (!response.ok) {
-      console.warn("API unavailable, using fallback locale data");
-      return FALLBACK_LOCALES;
-    }
-    const data: LocalesResponse = await response.json();
-    return data.locales;
-  } catch {
-    // During build or when API is down, use fallback
-    console.warn("Failed to fetch locales, using fallback data");
-    return FALLBACK_LOCALES;
+  const response = await fetch(`${API_BASE_URL}/api-locales`, {
+    next: { revalidate: 3600 }, // Cache for 1 hour
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to fetch locales: ${response.status}`);
   }
+  const data: LocalesResponse = await response.json();
+  return data.locales;
 }
 
 export interface TimeSince {

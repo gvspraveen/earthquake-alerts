@@ -1,7 +1,7 @@
 """Earthquake API - FastAPI service for earthquake.city.
 
 Consolidated API endpoints deployed as a single Cloud Run service.
-Reads locale configurations from Firestore with fallback to hardcoded defaults.
+Reads locale configurations from Firestore.
 """
 
 import logging
@@ -103,25 +103,13 @@ _firestore_client = None
 
 
 def _get_firestore_client():
-    """Get or create Firestore client."""
+    """Get or create Firestore client. Raises if unavailable."""
     global _firestore_client
     if _firestore_client is None:
-        try:
-            from google.cloud import firestore
-            _firestore_client = firestore.Client(database=FIRESTORE_DATABASE)
-            logger.info("Firestore client initialized for database: %s", FIRESTORE_DATABASE)
-        except Exception as e:
-            logger.warning("Failed to initialize Firestore client: %s", e)
-            return None
+        from google.cloud import firestore
+        _firestore_client = firestore.Client(database=FIRESTORE_DATABASE)
+        logger.info("Firestore client initialized for database: %s", FIRESTORE_DATABASE)
     return _firestore_client
-
-
-def _is_cache_valid() -> bool:
-    """Check if locale cache is still valid."""
-    if not _locale_cache:
-        return False
-    elapsed = time.time() - _cache_timestamp
-    return elapsed < CACHE_TTL_SECONDS
 
 
 def _refresh_locale_cache() -> None:
@@ -129,45 +117,33 @@ def _refresh_locale_cache() -> None:
     global _locale_cache, _cache_timestamp
 
     client = _get_firestore_client()
-    if client is None:
-        logger.warning("No Firestore client, using fallback locales")
-        return
+    docs = client.collection(LOCALES_COLLECTION).stream()
+    new_cache = {}
 
-    try:
-        docs = client.collection(LOCALES_COLLECTION).stream()
-        new_cache = {}
+    for doc in docs:
+        data = doc.to_dict()
+        if data and data.get("is_active", True):
+            slug = data.get("slug", doc.id)
+            bounds_data = data["bounds"]
+            new_cache[slug] = {
+                "name": data["name"],
+                "display_name": data["display_name"],
+                "bounds": BoundingBox(
+                    min_latitude=bounds_data["min_latitude"],
+                    max_latitude=bounds_data["max_latitude"],
+                    min_longitude=bounds_data["min_longitude"],
+                    max_longitude=bounds_data["max_longitude"],
+                ),
+                "center": data["center"],
+                "min_magnitude": data.get("min_magnitude", 2.5),
+                "is_featured": data.get("is_featured", True),
+                "sort_order": data.get("sort_order", 0),
+            }
 
-        for doc in docs:
-            data = doc.to_dict()
-            if data and data.get("is_active", True):
-                slug = data.get("slug", doc.id)
-                bounds_data = data.get("bounds", {})
-                new_cache[slug] = {
-                    "name": data.get("name", slug),
-                    "display_name": data.get("display_name", slug),
-                    "bounds": BoundingBox(
-                        min_latitude=bounds_data.get("min_latitude", 0),
-                        max_latitude=bounds_data.get("max_latitude", 0),
-                        min_longitude=bounds_data.get("min_longitude", 0),
-                        max_longitude=bounds_data.get("max_longitude", 0),
-                    ),
-                    "center": data.get("center", {"lat": 0, "lng": 0}),
-                    "min_magnitude": data.get("min_magnitude", 2.5),
-                    "is_featured": data.get("is_featured", True),
-                    "sort_order": data.get("sort_order", 0),
-                }
-
-        if new_cache:
-            _locale_cache.clear()
-            _locale_cache.update(new_cache)
-            _cache_timestamp = time.time()
-            logger.info("Loaded %d locales from Firestore", len(new_cache))
-        else:
-            logger.warning("No locales found in Firestore, keeping fallback")
-
-    except Exception as e:
-        logger.error("Failed to refresh locale cache: %s", e)
-        # Keep existing cache or use fallback
+    _locale_cache.clear()
+    _locale_cache.update(new_cache)
+    _cache_timestamp = time.time()
+    logger.info("Loaded %d locales from Firestore", len(new_cache))
 
 
 def _invalidate_cache() -> None:
@@ -176,70 +152,17 @@ def _invalidate_cache() -> None:
     _cache_timestamp = 0
 
 
-# ===== Fallback Locale (used when Firestore is unavailable) =====
-
-def _load_fallback_locale() -> dict[str, dict[str, Any]]:
-    """Load fallback locale from shared JSON file."""
-    import json
-    from pathlib import Path
-
-    # Try relative path from api/ directory, then absolute
-    paths = [
-        Path(__file__).parent.parent / "shared" / "fallback-locale.json",
-        Path("/app/shared/fallback-locale.json"),  # Cloud Run container path
-    ]
-
-    for path in paths:
-        if path.exists():
-            with open(path) as f:
-                data = json.load(f)
-                return {
-                    data["slug"]: {
-                        "name": data["name"],
-                        "display_name": data["display_name"],
-                        "bounds": BoundingBox(
-                            min_latitude=data["bounds"]["min_latitude"],
-                            max_latitude=data["bounds"]["max_latitude"],
-                            min_longitude=data["bounds"]["min_longitude"],
-                            max_longitude=data["bounds"]["max_longitude"],
-                        ),
-                        "center": data["center"],
-                        "min_magnitude": data["min_magnitude"],
-                        "is_featured": True,
-                        "sort_order": 1,
-                    }
-                }
-
-    # Hardcoded ultimate fallback if file not found
-    logger.warning("Fallback locale file not found, using hardcoded default")
-    return {
-        "sanramon": {
-            "name": "San Ramon",
-            "display_name": "San Ramon, CA",
-            "bounds": BoundingBox(37.3, 38.3, -122.5, -121.5),
-            "center": {"lat": 37.78, "lng": -121.98},
-            "min_magnitude": 2.5,
-            "is_featured": True,
-            "sort_order": 1,
-        }
-    }
-
-FALLBACK_LOCALES = _load_fallback_locale()
-
 USGS_API_URL = "https://earthquake.usgs.gov/fdsnws/event/1/query"
 
 
 # ===== Helper Functions =====
 
 def _get_locales() -> dict[str, dict[str, Any]]:
-    """Get locales from cache or Firestore, with fallback."""
-    if not _is_cache_valid():
+    """Get locales from cache or Firestore."""
+    cache_age = time.time() - _cache_timestamp
+    if not _locale_cache or cache_age > CACHE_TTL_SECONDS:
         _refresh_locale_cache()
-
-    if _locale_cache:
-        return _locale_cache
-
-    return FALLBACK_LOCALES
+    return _locale_cache
 
 
 def _bounds_to_dict(bounds: BoundingBox) -> dict[str, float]:

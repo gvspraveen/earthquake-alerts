@@ -1,0 +1,60 @@
+#!/bin/bash
+# Pre-push hook: Run tests before allowing push to remote
+# This prevents pushing broken code to main
+
+set -e
+
+echo "Running pre-push checks..."
+
+# Get the root directory of the repo
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+# Run Python tests
+echo ""
+echo "=== Running Python tests ==="
+cd "$REPO_ROOT"
+
+# Try to find pytest in various locations
+PYTEST_CMD=""
+if [ -f "$REPO_ROOT/.venv/bin/pytest" ]; then
+    PYTEST_CMD="$REPO_ROOT/.venv/bin/pytest"
+elif [ -f "$REPO_ROOT/venv/bin/pytest" ]; then
+    PYTEST_CMD="$REPO_ROOT/venv/bin/pytest"
+elif command -v pytest &> /dev/null; then
+    PYTEST_CMD="pytest"
+elif python3 -c "import pytest" 2>/dev/null; then
+    PYTEST_CMD="python3 -m pytest"
+fi
+
+if [ -n "$PYTEST_CMD" ]; then
+    $PYTEST_CMD tests/ -v --tb=short
+    if [ $? -ne 0 ]; then
+        echo "❌ Python tests failed. Push aborted."
+        exit 1
+    fi
+    echo "✅ Python tests passed"
+else
+    echo "⚠️ pytest not found, skipping Python tests"
+    echo "   Install with: pip install pytest"
+fi
+
+# Run TypeScript type check for web
+echo ""
+echo "=== Running TypeScript type check ==="
+if [ -d "$REPO_ROOT/web" ] && [ -f "$REPO_ROOT/web/package.json" ]; then
+    cd "$REPO_ROOT/web"
+    if command -v npm &> /dev/null; then
+        npm run build --if-present 2>&1 | head -50
+        if [ ${PIPESTATUS[0]} -ne 0 ]; then
+            echo "❌ Web build failed. Push aborted."
+            exit 1
+        fi
+        echo "✅ Web build passed"
+    else
+        echo "⚠️ npm not found, skipping web build"
+    fi
+fi
+
+echo ""
+echo "🎉 All pre-push checks passed!"
+exit 0

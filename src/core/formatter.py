@@ -76,6 +76,7 @@ def format_slack_message(
     earthquake: Earthquake,
     channel_name: str | None = None,
     nearby_pois: list[tuple[PointOfInterest, float]] | None = None,
+    is_test: bool = False,
 ) -> dict[str, Any]:
     """Format an earthquake as a Slack message payload.
 
@@ -85,6 +86,7 @@ def format_slack_message(
         earthquake: Earthquake to format
         channel_name: Optional channel name for context
         nearby_pois: Optional list of (POI, distance_km) tuples
+        is_test: If True, adds [TEST] marker to the message
 
     Returns:
         Slack message payload dict
@@ -95,8 +97,11 @@ def format_slack_message(
     # Google Maps link for the location
     maps_url = f"https://www.google.com/maps?q={earthquake.latitude},{earthquake.longitude}"
 
+    # Test marker suffix
+    test_marker = " [TEST]" if is_test else ""
+
     # Build the main text with @everyone
-    text = f"<!everyone> *{earthquake.magnitude:.1f}* - {earthquake.place}"
+    text = f"<!everyone> *{earthquake.magnitude:.1f}* - {earthquake.place}{test_marker}"
 
     # Build blocks for rich formatting
     blocks: list[dict[str, Any]] = [
@@ -104,7 +109,7 @@ def format_slack_message(
             "type": "header",
             "text": {
                 "type": "plain_text",
-                "text": f"{earthquake.magnitude:.1f}",
+                "text": f"{earthquake.magnitude:.1f}{test_marker}",
             },
         },
         {
@@ -287,6 +292,7 @@ def get_nearby_pois(
 def format_twitter_message(
     earthquake: Earthquake,
     nearby_pois: list[tuple[PointOfInterest, float]] | None = None,
+    is_test: bool = False,
 ) -> str:
     """Format an earthquake as a tweet (max 280 characters).
 
@@ -301,12 +307,16 @@ def format_twitter_message(
     Args:
         earthquake: Earthquake to format
         nearby_pois: Optional list of (POI, distance_km) tuples
+        is_test: If True, adds [TEST] marker to the message
 
     Returns:
         Tweet text, guaranteed to be <= 280 characters
     """
     # Build tweet components
     lines = []
+
+    # Test marker suffix
+    test_marker = " [TEST]" if is_test else ""
 
     # Line 1: Magnitude + location (always included)
     magnitude_prefix = ""
@@ -315,7 +325,7 @@ def format_twitter_message(
     elif earthquake.magnitude >= 5.0:
         magnitude_prefix = "STRONG "
 
-    headline = f"{magnitude_prefix}M{earthquake.magnitude:.1f} earthquake - {earthquake.place}"
+    headline = f"{magnitude_prefix}M{earthquake.magnitude:.1f} earthquake - {earthquake.place}{test_marker}"
     lines.append(headline)
 
     # Line 2: Special alerts (prioritize by importance)
@@ -383,6 +393,7 @@ def format_twitter_message(
 def format_whatsapp_message(
     earthquake: Earthquake,
     nearby_pois: list[tuple[PointOfInterest, float]] | None = None,
+    is_test: bool = False,
 ) -> str:
     """Format an earthquake as a WhatsApp message.
 
@@ -394,6 +405,7 @@ def format_whatsapp_message(
     Args:
         earthquake: Earthquake to format
         nearby_pois: Optional list of (POI, distance_km) tuples
+        is_test: If True, adds [TEST] marker to the message
 
     Returns:
         WhatsApp message text
@@ -401,10 +413,13 @@ def format_whatsapp_message(
     emoji = get_magnitude_emoji(earthquake.magnitude)
     severity = get_severity_label(earthquake.magnitude)
 
+    # Test marker suffix
+    test_marker = " [TEST]" if is_test else ""
+
     lines = []
 
     # Header with emoji and magnitude
-    lines.append(f"{emoji} *{severity} Earthquake*")
+    lines.append(f"{emoji} *{severity} Earthquake{test_marker}*")
     lines.append("")
 
     # Main info

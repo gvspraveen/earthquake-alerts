@@ -11,6 +11,10 @@ on:
         description: 'Location description'
         required: false
         default: '8km NE of San Ramon, CA'
+      channel:
+        description: 'Specific channel to send to (leave empty for all channels)'
+        required: false
+        default: ''
 
 env:
   PROJECT_ID: gen-lang-client-0579637657
@@ -26,6 +30,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
@@ -36,68 +48,19 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Send Test Alert
+        env:
+          GCP_PROJECT: ${{ env.PROJECT_ID }}
+          CONFIG_PATH: config/config-production.yaml
         run: |
-          # Get webhook URL from Secret Manager
-          WEBHOOK_URL=$(gcloud secrets versions access latest --secret=slack-webhook-url --project=${{ env.PROJECT_ID }})
+          # Build command with optional channel filter
+          CMD="python scripts/send_test_alert.py --magnitude ${{ inputs.magnitude }} --location '${{ inputs.location }}'"
 
-          # Get current timestamp
-          TIMESTAMP=$(date +%s)
+          if [ -n "${{ inputs.channel }}" ]; then
+            CMD="$CMD --channel '${{ inputs.channel }}'"
+          fi
 
-          # Send test alert
-          curl -s -X POST "$WEBHOOK_URL" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "text": "<!everyone> *${{ inputs.magnitude }}* - ${{ inputs.location }} [TEST]",
-              "blocks": [
-                {
-                  "type": "header",
-                  "text": {
-                    "type": "plain_text",
-                    "text": "${{ inputs.magnitude }} [TEST]",
-                    "emoji": true
-                  }
-                },
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "<https://www.google.com/maps?q=37.8199,-121.9280|${{ inputs.location }}> at <!date^'"$TIMESTAMP"'^{time}|now>"
-                  }
-                },
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "🟡 PAGER Alert Level: YELLOW\n👥 Felt by 1250 people"
-                  }
-                },
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "*Nearby Locations:*\n• San Ramon: 4.2 km away"
-                  }
-                },
-                {
-                  "type": "actions",
-                  "elements": [
-                    {
-                      "type": "button",
-                      "text": {
-                        "type": "plain_text",
-                        "text": "View on USGS"
-                      },
-                      "url": "https://earthquake.usgs.gov/earthquakes/map/"
-                    }
-                  ]
-                },
-                {
-                  "type": "divider"
-                }
-              ]
-            }'
-
-          echo "Test alert sent!"
+          echo "Running: $CMD"
+          eval $CMD
 
       - name: Verify Function Endpoint
         run: |

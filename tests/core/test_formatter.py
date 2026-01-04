@@ -13,6 +13,8 @@ from src.core.formatter import (
     get_severity_label,
     format_earthquake_summary,
     format_slack_message,
+    format_twitter_message,
+    format_whatsapp_message,
     format_batch_summary,
     get_nearby_pois,
 )
@@ -199,6 +201,75 @@ class TestFormatSlackMessage:
         all_text = str(result["blocks"])
         assert "Office" in all_text
         assert "5.0 km" in all_text
+
+    def test_includes_test_marker_when_is_test_true(self, sample_earthquake):
+        """Should include [TEST] marker when is_test=True."""
+        result = format_slack_message(sample_earthquake, is_test=True)
+
+        # Check text has [TEST]
+        assert "[TEST]" in result["text"]
+
+        # Check header block has [TEST]
+        header_block = next(b for b in result["blocks"] if b.get("type") == "header")
+        assert "[TEST]" in header_block["text"]["text"]
+
+    def test_excludes_test_marker_when_is_test_false(self, sample_earthquake):
+        """Should not include [TEST] marker when is_test=False."""
+        result = format_slack_message(sample_earthquake, is_test=False)
+
+        assert "[TEST]" not in result["text"]
+        header_block = next(b for b in result["blocks"] if b.get("type") == "header")
+        assert "[TEST]" not in header_block["text"]["text"]
+
+
+class TestFormatTwitterMessage:
+    """Tests for format_twitter_message() function."""
+
+    def test_includes_magnitude_and_location(self, sample_earthquake):
+        """Should include magnitude and location."""
+        result = format_twitter_message(sample_earthquake)
+        assert "M4.5" in result
+        assert "San Francisco" in result
+
+    def test_respects_280_char_limit(self, sample_earthquake):
+        """Tweet should not exceed 280 characters."""
+        result = format_twitter_message(sample_earthquake)
+        assert len(result) <= 280
+
+    def test_includes_test_marker_when_is_test_true(self, sample_earthquake):
+        """Should include [TEST] marker when is_test=True."""
+        result = format_twitter_message(sample_earthquake, is_test=True)
+        assert "[TEST]" in result
+
+    def test_excludes_test_marker_when_is_test_false(self, sample_earthquake):
+        """Should not include [TEST] marker when is_test=False."""
+        result = format_twitter_message(sample_earthquake, is_test=False)
+        assert "[TEST]" not in result
+
+
+class TestFormatWhatsAppMessage:
+    """Tests for format_whatsapp_message() function."""
+
+    def test_includes_magnitude_and_location(self, sample_earthquake):
+        """Should include magnitude and location."""
+        result = format_whatsapp_message(sample_earthquake)
+        assert "4.5" in result
+        assert "San Francisco" in result
+
+    def test_includes_severity_label(self, sample_earthquake):
+        """Should include severity label."""
+        result = format_whatsapp_message(sample_earthquake)
+        assert "Light Earthquake" in result  # M4.5 is "Light"
+
+    def test_includes_test_marker_when_is_test_true(self, sample_earthquake):
+        """Should include [TEST] marker when is_test=True."""
+        result = format_whatsapp_message(sample_earthquake, is_test=True)
+        assert "[TEST]" in result
+
+    def test_excludes_test_marker_when_is_test_false(self, sample_earthquake):
+        """Should not include [TEST] marker when is_test=False."""
+        result = format_whatsapp_message(sample_earthquake, is_test=False)
+        assert "[TEST]" not in result
 
 
 class TestFormatBatchSummary:
